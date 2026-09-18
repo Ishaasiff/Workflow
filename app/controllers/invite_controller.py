@@ -13,7 +13,7 @@ from app.models import Invite, OrgMembership, Organization, User
 from app.models.auth import TokenPair
 from app.models.org_memberships import OrgRole
 from app.security import create_token_pair, hash_password
-from app.services.email import send_invite_email
+from app.core.email import send_invite_email
 
 
 def _generate_token() -> str:

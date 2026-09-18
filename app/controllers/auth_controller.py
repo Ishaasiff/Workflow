@@ -1,5 +1,8 @@
+import logging
+import secrets
 import uuid
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 
 import jwt
 from fastapi import Depends, HTTPException, status
@@ -7,11 +10,14 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
+from app.core.email import send_password_reset_email
 from app.database import get_db
 from app.models import (
     OrgMembership,
     OrgRole,
     Organization,
+    PasswordResetToken,
     ProjectMember,
     ProjectRole,
     TeamMember,
@@ -26,6 +32,8 @@ from app.security import (
 )
 
 security = HTTPBearer(auto_error=False)
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -106,6 +114,74 @@ async def get_me(db: AsyncSession, ctx: AuthContext) -> UserOut:
     if user is None:
         raise LookupError("user not found")
     return UserOut.model_validate(user)
+
+
+async def request_password_reset(db: AsyncSession, email: str) -> None:
+    result = await db.execute(select(User).where(User.email == email))
+    user = result.scalar_one_or_none()
+    if user is None:
+        return
+
+    token = secrets.token_urlsafe(48)
+    reset = PasswordResetToken(
+        user_id=user.id,
+        token=token,
+        expires_at=datetime.now(timezone.utc)
+        + timedelta(minutes=settings.reset_token_expire_minutes),
+    )
+    db.add(reset)
+    await db.flush()
+
+    try:
+        await send_password_reset_email(to_email=email, reset_token=token)
+    except Exception:
+        logger.exception("failed to send password reset email to %s", email)
+
+    await db.commit()
+
+
+async def validate_reset_token(db: AsyncSession, token: str) -> dict:
+    result = await db.execute(
+        select(PasswordResetToken).where(PasswordResetToken.token == token)
+    )
+    reset = result.scalar_one_or_none()
+    if reset is None:
+        raise LookupError("invalid reset token")
+
+    if reset.used_at is not None:
+        raise LookupError("this reset link has already been used")
+
+    if reset.expires_at < datetime.now(timezone.utc):
+        raise LookupError("this reset link has expired")
+
+    user = await db.get(User, reset.user_id)
+    if user is None:
+        raise LookupError("user not found")
+
+    return {"email": user.email}
+
+
+async def reset_password(db: AsyncSession, token: str, new_password: str) -> None:
+    result = await db.execute(
+        select(PasswordResetToken).where(PasswordResetToken.token == token)
+    )
+    reset = result.scalar_one_or_none()
+    if reset is None:
+        raise LookupError("invalid reset token")
+
+    if reset.used_at is not None:
+        raise LookupError("this reset link has already been used")
+
+    if reset.expires_at < datetime.now(timezone.utc):
+        raise LookupError("this reset link has expired")
+
+    user = await db.get(User, reset.user_id)
+    if user is None:
+        raise LookupError("user not found")
+
+    user.hashed_password = hash_password(new_password)
+    reset.used_at = datetime.now(timezone.utc)
+    await db.commit()
 
 
 # ---- Token / auth dependencies ---------------------------------------------

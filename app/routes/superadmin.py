@@ -1,9 +1,18 @@
 import uuid
 
+from pydantic import BaseModel
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.controllers.auth_controller import AuthContext, require_super_admin
+from app.controllers.auth_controller import (
+    AuthContext,
+    refresh,
+    request_password_reset,
+    require_super_admin,
+    reset_password,
+    validate_reset_token,
+)
 from app.controllers import superadmin_controller as sa_fn
 from app.database import get_db
 from app.models.admin import (
@@ -12,9 +21,21 @@ from app.models.admin import (
     OrganizationAdminOut,
     UserAdminOut,
 )
-from app.models.auth import LoginRequest, LoginResponse
+from app.models.auth import (
+    ForgotPasswordRequest,
+    LoginRequest,
+    LoginResponse,
+    RefreshRequest,
+    ResetPasswordRequest,
+    ResetTokenResponse,
+    TokenPair,
+)
 
 router = APIRouter(prefix="/superadmin", tags=["superadmin"])
+
+
+class MessageResponse(BaseModel):
+    message: str
 
 
 @router.post("/organization", status_code=201)
@@ -40,6 +61,54 @@ async def login(
         raise HTTPException(status_code=401, detail=str(e))
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
+
+
+@router.post("/refresh", response_model=TokenPair)
+async def refresh_route(payload: RefreshRequest):
+    try:
+        return refresh(payload.refresh_token)
+    except ValueError as e:
+        raise HTTPException(status_code=401, detail=str(e))
+
+
+@router.post("/forgot-password", response_model=MessageResponse)
+async def forgot_password(
+    payload: ForgotPasswordRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    await request_password_reset(db, payload.email)
+    return MessageResponse(
+        message="if an account exists for this email, a reset link has been sent"
+    )
+
+
+@router.get("/reset-password/{token}", response_model=ResetTokenResponse)
+async def validate_reset_token(
+    token: str,
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        return await validate_reset_token(db, token)
+    except LookupError as e:
+        detail = str(e)
+        if "already been used" in detail or "expired" in detail:
+            raise HTTPException(status_code=410, detail=detail)
+        raise HTTPException(status_code=404, detail=detail)
+
+
+@router.post("/reset-password", response_model=MessageResponse)
+async def reset_password(
+    payload: ResetPasswordRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        await reset_password(db, payload.token, payload.new_password)
+    except LookupError as e:
+        detail = str(e)
+        if "already been used" in detail or "expired" in detail:
+            raise HTTPException(status_code=410, detail=detail)
+        raise HTTPException(status_code=404, detail=detail)
+    return MessageResponse(message="password has been reset successfully")
 
 
 @router.get("/organizations", response_model=list[OrganizationAdminOut])

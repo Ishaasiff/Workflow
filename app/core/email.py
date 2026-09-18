@@ -53,3 +53,30 @@ async def send_invite_email(
     </div>
     """
     await send_email(to_email, subject, html_body)
+
+
+async def send_password_reset_email(
+    to_email: str,
+    reset_token: str,
+) -> None:
+    reset_url = f"{settings.frontend_url}/reset-password/{reset_token}"
+    subject = "Reset your Workflow password"
+    html_body = f"""
+    <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto; padding: 32px;">
+        <h2 style="margin-bottom: 16px;">Reset your password</h2>
+        <p style="margin-bottom: 24px;">
+            We received a request to reset your Workflow password.
+            Click the button below to choose a new password:
+        </p>
+        <a href="{reset_url}"
+           style="display:inline-block; padding:12px 24px; background-color:#4f46e5; color:#fff;
+                  text-decoration:none; border-radius:6px; font-weight:600;">
+            Reset Password
+        </a>
+        <p style="margin-top:32px; font-size:13px; color:#888;">
+            This link will expire in {settings.reset_token_expire_minutes} minutes.
+            If you did not request this, you can safely ignore this email.
+        </p>
+    </div>
+    """
+    await send_email(to_email, subject, html_body)

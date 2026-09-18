@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     smtp_from_email: str = ""
     smtp_from_name: str = "Workflow"
     invite_token_expire_days: int = 7
+    reset_token_expire_minutes: int = 60
     frontend_url: str = "http://localhost:3000"
 
 
