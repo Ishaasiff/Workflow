@@ -1,4 +1,8 @@
+import logging
+
 from fastapi import FastAPI
+
+logging.basicConfig(level=logging.DEBUG)
 
 from app.routes.auth import router as auth_router
 from app.routes.admin import router as admin_router
@@ -11,6 +15,12 @@ from app.routes.tasks import router as tasks_router
 from app.routes.reports import router as reports_router
 
 app = FastAPI(title="Workflow API", version="0.1.0")
+
+
+@app.get("/health", tags=["health"])
+async def health_check():
+    return {"status": "ok"}
+
 
 app.include_router(auth_router)
 app.include_router(admin_router)

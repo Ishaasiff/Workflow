@@ -235,6 +235,17 @@ async def add_member(
 ) -> ProjectMemberOut:
     await _get_project_for_org(db, project_id, org_id)
 
+    if role == ProjectRole.project_manager:
+        actor_membership = await db.execute(
+            select(OrgMembership).where(
+                OrgMembership.org_id == org_id,
+                OrgMembership.user_id == actor_id,
+            )
+        )
+        actor_role = actor_membership.scalar_one_or_none()
+        if actor_role is None or actor_role.role != OrgRole.org_admin:
+            raise PermissionError("only org admins can assign project manager role")
+
     membership = await db.execute(
         select(OrgMembership).where(
             OrgMembership.org_id == org_id,
@@ -278,6 +289,18 @@ async def update_member_role(
     actor_id: uuid.UUID,
 ) -> ProjectMemberOut:
     await _get_project_for_org(db, project_id, org_id)
+
+    if role == ProjectRole.project_manager:
+        actor_membership = await db.execute(
+            select(OrgMembership).where(
+                OrgMembership.org_id == org_id,
+                OrgMembership.user_id == actor_id,
+            )
+        )
+        actor_role = actor_membership.scalar_one_or_none()
+        if actor_role is None or actor_role.role != OrgRole.org_admin:
+            raise PermissionError("only org admins can assign project manager role")
+
     member = await _require_project_member_row(db, project_id, user_id)
     member.role = role
     await _log_activity(

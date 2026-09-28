@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.controllers.auth_controller import (
     AuthContext,
+    OrgSelectionRequired,
     get_current_user,
     get_me,
     login_user,
@@ -46,15 +47,29 @@ async def signup_route(payload: SignupRequest, db: AsyncSession = Depends(get_db
 @router.post("/login", response_model=LoginResponse)
 async def login_route(payload: LoginRequest, db: AsyncSession = Depends(get_db)):
     try:
-        return await login_user(db, payload.email, payload.password)
+        return await login_user(db, payload.email, payload.password, payload.org_id)
+    except OrgSelectionRequired as e:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": "multiple organizations found; retry with org_id",
+                "organizations": [
+                    org.model_dump(mode="json") for org in e.organizations
+                ],
+            },
+        )
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
     except ValueError as e:
         raise HTTPException(status_code=401, detail=str(e))
 
 
 @router.post("/refresh", response_model=TokenPair)
-def refresh_route(payload: RefreshRequest):
+async def refresh_route(payload: RefreshRequest, db: AsyncSession = Depends(get_db)):
     try:
-        return refresh(payload.refresh_token)
+        return await refresh(payload.refresh_token, db, payload.org_id)
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
     except ValueError as e:
         raise HTTPException(status_code=401, detail=str(e))
 

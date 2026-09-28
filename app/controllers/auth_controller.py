@@ -49,6 +49,14 @@ ORG_ADMIN_ROLES = (OrgRole.org_admin,)
 
 # ---- Auth business logic ---------------------------------------------------
 
+class OrgSelectionRequired(Exception):
+    """Raised when a user belongs to multiple orgs and no org_id was chosen."""
+
+    def __init__(self, organizations: list[OrganizationOut]):
+        self.organizations = organizations
+        super().__init__("organization selection required")
+
+
 async def signup(
     db: AsyncSession, org_name: str, admin_email: str, admin_password: str, full_name: str
 ) -> dict:
@@ -85,28 +93,74 @@ async def signup(
     }
 
 
-async def login_user(db: AsyncSession, email: str, password: str) -> dict:
+async def login_user(
+    db: AsyncSession,
+    email: str,
+    password: str,
+    org_id: uuid.UUID | None = None,
+) -> dict:
     result = await db.execute(select(User).where(User.email == email))
     user = result.scalar_one_or_none()
     if not user or not verify_password(password, user.hashed_password):
         raise ValueError("invalid email or password")
 
     membership_result = await db.execute(
-        select(OrgMembership).where(OrgMembership.user_id == user.id)
+        select(OrgMembership, Organization)
+        .join(Organization, Organization.id == OrgMembership.org_id)
+        .where(OrgMembership.user_id == user.id)
+        .order_by(OrgMembership.joined_at)
     )
-    membership = membership_result.scalars().first()
+    rows = membership_result.all()
+    available_orgs = [OrganizationOut.model_validate(org) for _, org in rows]
 
-    org_id = membership.org_id if membership else None
+    membership: OrgMembership | None
+    if org_id is not None:
+        org_uuid = org_id if isinstance(org_id, uuid.UUID) else uuid.UUID(str(org_id))
+        membership = next((m for m, _ in rows if m.org_id == org_uuid), None)
+        if membership is None:
+            raise PermissionError("you are not a member of the requested organization")
+    elif len(rows) == 1:
+        membership = rows[0][0]
+    elif len(rows) > 1:
+        raise OrgSelectionRequired(available_orgs)
+    else:
+        membership = None
+
+    selected_org_id = membership.org_id if membership else None
     role = membership.role.value if membership else None
 
-    token = TokenPair(**create_token_pair(user.id, org_id, role, user.is_super_admin))
-    return {"user": UserOut.model_validate(user), "token": token}
+    token = TokenPair(
+        **create_token_pair(user.id, selected_org_id, role, user.is_super_admin)
+    )
+    return {
+        "user": UserOut.model_validate(user),
+        "token": token,
+        "organizations": available_orgs,
+    }
 
 
-def refresh(refresh_token: str) -> TokenPair:
+async def refresh(
+    refresh_token: str,
+    db: AsyncSession,
+    org_id: uuid.UUID | None = None,
+) -> TokenPair:
     ctx = decode_refresh_token(refresh_token)
+
+    target_org_id = ctx.org_id
     role = ctx.org_role.value if ctx.org_role else None
-    return TokenPair(**create_token_pair(ctx.user_id, ctx.org_id, role, ctx.is_super_admin))
+
+    if org_id is not None:
+        # Switching (or confirming) org context: always resolve the role from
+        # the database so stale roles are never carried into new tokens.
+        new_role = await get_org_role(db, ctx.user_id, org_id)
+        if new_role is None:
+            raise PermissionError("you are not a member of the requested organization")
+        target_org_id = org_id
+        role = new_role.value
+
+    return TokenPair(
+        **create_token_pair(ctx.user_id, target_org_id, role, ctx.is_super_admin)
+    )
 
 
 async def get_me(db: AsyncSession, ctx: AuthContext) -> UserOut:

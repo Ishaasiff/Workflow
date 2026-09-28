@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import DateTime, ForeignKey, String, UniqueConstraint
+from sqlalchemy import DateTime, Enum, ForeignKey, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -19,7 +19,7 @@ class Invite(Base):
         ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False
     )
     email: Mapped[str] = mapped_column(String, nullable=False)
-    role: Mapped[OrgRole] = mapped_column(nullable=False)
+    role: Mapped[OrgRole] = mapped_column(Enum(OrgRole), nullable=False)
     token: Mapped[str] = mapped_column(String, unique=True, nullable=False)
     invited_by: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"), nullable=True

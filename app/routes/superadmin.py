@@ -64,9 +64,11 @@ async def login(
 
 
 @router.post("/refresh", response_model=TokenPair)
-async def refresh_route(payload: RefreshRequest):
+async def refresh_route(payload: RefreshRequest, db: AsyncSession = Depends(get_db)):
     try:
-        return refresh(payload.refresh_token)
+        return await refresh(payload.refresh_token, db, payload.org_id)
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
     except ValueError as e:
         raise HTTPException(status_code=401, detail=str(e))
 

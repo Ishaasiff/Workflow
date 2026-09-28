@@ -1,7 +1,10 @@
+import logging
 import uuid
 from datetime import datetime
 
 from sqlalchemy import delete, func, select
+
+logger = logging.getLogger(__name__)
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
@@ -120,13 +123,18 @@ async def list_members(
     await _get_org(db, org_id)
     result = await db.execute(
         select(OrgMembership, User)
-        .join(User, User.id == OrgMembership.user_id)
+        .outerjoin(User, User.id == OrgMembership.user_id)
         .where(OrgMembership.org_id == org_id)
         .order_by(OrgMembership.joined_at)
         .offset(offset)
         .limit(limit)
     )
     rows = result.all()
+    logger.debug(
+        "list_members(org_id=%s) returned %d rows",
+        org_id,
+        len(rows),
+    )
     return [
         MemberOut(
             user_id=membership.user_id,

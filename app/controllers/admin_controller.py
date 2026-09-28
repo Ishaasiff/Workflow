@@ -1,7 +1,10 @@
+import logging
 import uuid
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+logger = logging.getLogger(__name__)
 
 from app.controllers.auth_controller import AuthContext
 from app.models import OrgMembership, OrgRole, User
@@ -39,11 +42,16 @@ async def _member_out(db: AsyncSession, membership: OrgMembership) -> MemberOut:
 async def list_members(db: AsyncSession, org_id: uuid.UUID) -> list[MemberOut]:
     result = await db.execute(
         select(OrgMembership, User)
-        .join(User, User.id == OrgMembership.user_id)
+        .outerjoin(User, User.id == OrgMembership.user_id)
         .where(OrgMembership.org_id == org_id)
         .order_by(OrgMembership.joined_at)
     )
     rows = result.all()
+    logger.debug(
+        "list_members(org_id=%s) returned %d rows",
+        org_id,
+        len(rows),
+    )
     return [
         MemberOut(
             user_id=membership.user_id,
