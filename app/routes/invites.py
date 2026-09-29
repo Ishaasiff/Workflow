@@ -11,6 +11,7 @@ from app.controllers.invite_controller import (
     create_invite,
     validate_invite_token,
 )
+from app.core.plans import PlanLimitError
 from app.database import get_db
 from app.models.auth import TokenPair, UserOut
 from app.models.invite_schemas import (
@@ -39,6 +40,8 @@ async def create_invite_route(
         return invite
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
+    except PlanLimitError as e:
+        raise HTTPException(status_code=402, detail=str(e))
     except ValueError as e:
         raise HTTPException(status_code=409, detail=str(e))
 
@@ -69,6 +72,8 @@ async def accept_invite_route(
             user=UserOut.model_validate(result["user"]),
             token=result["token"],
         )
+    except PlanLimitError as e:
+        raise HTTPException(status_code=402, detail=str(e))
     except LookupError as e:
         detail = str(e)
         if "already been accepted" in detail or "expired" in detail:

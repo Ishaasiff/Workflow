@@ -14,6 +14,8 @@ from app.models.auth import TokenPair
 from app.models.org_memberships import OrgRole
 from app.security import create_token_pair, hash_password
 from app.core.email import send_invite_email
+from app.core.plans import PlanLimitError, can_add_member
+from sqlalchemy import func
 
 
 def _generate_token() -> str:
@@ -28,6 +30,20 @@ async def create_invite(
 ) -> Invite:
     if role == OrgRole.super_admin:
         raise PermissionError("cannot invite as super_admin")
+
+    org = await db.get(Organization, ctx.org_id)
+    if org is None:
+        raise LookupError("organization not found")
+
+    member_count_query = await db.execute(
+        select(func.count(OrgMembership.id)).where(
+            OrgMembership.org_id == ctx.org_id
+        )
+    )
+    member_count = member_count_query.scalar_one()
+
+    if not can_add_member(org.plan_tier, member_count):
+        raise PlanLimitError(org.plan_tier, "members", 5)
 
     existing_member = await db.execute(
         select(OrgMembership)
@@ -127,6 +143,20 @@ async def accept_invite(
 
     if invite.expires_at < datetime.now(timezone.utc):
         raise LookupError("this invite has expired")
+
+    org = await db.get(Organization, invite.org_id)
+    if org is None:
+        raise LookupError("organization not found")
+
+    member_count_query = await db.execute(
+        select(func.count(OrgMembership.id)).where(
+            OrgMembership.org_id == invite.org_id
+        )
+    )
+    member_count = member_count_query.scalar_one()
+
+    if not can_add_member(org.plan_tier, member_count):
+        raise PlanLimitError(org.plan_tier, "members", 5)
 
     user = User(
         email=invite.email,

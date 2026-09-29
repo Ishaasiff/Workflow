@@ -18,6 +18,7 @@ from app.models import (
     OrgRole,
     Organization,
     PasswordResetToken,
+    PlanTier,
     ProjectMember,
     ProjectRole,
     TeamMember,
@@ -64,7 +65,7 @@ async def signup(
     if result.scalar_one_or_none():
         raise ValueError("a user with this email already exists")
 
-    org = Organization(name=org_name)
+    org = Organization(name=org_name, plan_tier=PlanTier.free)
     db.add(org)
     await db.flush()
 

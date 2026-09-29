@@ -10,6 +10,7 @@ from app.controllers.auth_controller import (
     require_org_admin,
     require_org_member,
 )
+from app.core.plans import PlanLimitError
 from app.database import get_db
 from app.models.project_schemas import (
     ProgressOut,
@@ -37,6 +38,8 @@ async def create_project(
         return await project_fn.create_project(
             db, ctx.org_id, ctx.user_id, payload.name, payload.description
         )
+    except PlanLimitError as e:
+        raise HTTPException(status_code=402, detail=str(e))
     except ValueError as e:
         raise HTTPException(status_code=409, detail=str(e))
 
@@ -82,6 +85,8 @@ async def update_project(
             payload.description if "description" in payload.model_fields_set else None,
             payload.status if "status" in payload.model_fields_set else None,
         )
+    except PlanLimitError as e:
+        raise HTTPException(status_code=402, detail=str(e))
     except LookupError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except PermissionError as e:

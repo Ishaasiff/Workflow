@@ -57,3 +57,7 @@ class UserAdminOut(BaseModel):
 
 class CreateOrganizationRequest(BaseModel):
     name: str = Field(min_length=1, max_length=100)
+
+
+class PlanUpdateRequest(BaseModel):
+    plan_tier: PlanTier

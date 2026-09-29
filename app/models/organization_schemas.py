@@ -10,7 +10,6 @@ from app.models.organization import PlanTier
 class OrgUpdateRequest(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=100)
     logo_url: str | None = None
-    plan_tier: PlanTier | None = None
 
 
 class OrgProfileOut(BaseModel):

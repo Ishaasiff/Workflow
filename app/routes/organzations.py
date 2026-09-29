@@ -55,7 +55,6 @@ async def update_organization(
             ctx.user_id,
             payload.name if "name" in payload.model_fields_set else None,
             payload.logo_url if "logo_url" in payload.model_fields_set else None,
-            payload.plan_tier if "plan_tier" in payload.model_fields_set else None,
         )
     except LookupError as e:
         raise HTTPException(status_code=404, detail=str(e))

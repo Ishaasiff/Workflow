@@ -3,7 +3,7 @@ import uuid
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import OrgMembership, Organization, User, OrgRole
+from app.models import OrgMembership, Organization, User, OrgRole, PlanTier
 from app.models.admin import OrganizationAdminOut, UserAdminOut
 from app.models.auth import LoginResponse, TokenPair, UserOut
 from app.security import create_token_pair, verify_password
@@ -106,3 +106,27 @@ async def update_membership_role(
     await db.commit()
     await db.refresh(membership)
     return {"membership_id": str(membership.id), "role": membership.role.value}
+
+
+async def update_org_plan(
+    db: AsyncSession, org_id: uuid.UUID, plan_tier: PlanTier
+) -> OrganizationAdminOut:
+    org = await db.get(Organization, org_id)
+    if org is None:
+        raise LookupError("organization not found")
+    org.plan_tier = plan_tier
+    await db.commit()
+    await db.refresh(org)
+
+    count_result = await db.execute(
+        select(func.count(OrgMembership.id)).where(OrgMembership.org_id == org.id)
+    )
+    member_count = count_result.scalar_one()
+
+    return OrganizationAdminOut(
+        id=org.id,
+        name=org.name,
+        plan_tier=org.plan_tier,
+        member_count=member_count,
+        created_at=org.created_at,
+    )

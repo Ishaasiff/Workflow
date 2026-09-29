@@ -9,6 +9,7 @@ from app.models import (
     ActivityLog,
     OrgMembership,
     OrgRole,
+    Organization,
     Project,
     ProjectMember,
     ProjectStatus,
@@ -23,6 +24,8 @@ from app.models.project_schemas import (
     StatusCount,
     StatusDeleteResponse,
 )
+from app.core.plans import PlanLimitError, can_add_project
+from sqlalchemy import func
 
 DEFAULT_STATUSES = ["To Do", "In Progress", "Done"]
 
@@ -103,6 +106,21 @@ async def create_project(
     name: str,
     description: str | None,
 ) -> Project:
+    org = await db.get(Organization, org_id)
+    if org is None:
+        raise LookupError("organization not found")
+
+    project_count_query = await db.execute(
+        select(func.count(Project.id)).where(
+            Project.org_id == org_id,
+            Project.status != ProjectStatus.archived,
+        )
+    )
+    project_count = project_count_query.scalar_one()
+
+    if not can_add_project(org.plan_tier, project_count):
+        raise PlanLimitError(org.plan_tier, "projects", 3)
+
     project = Project(org_id=org_id, name=name, description=description, created_by=creator_id)
     db.add(project)
     await db.flush()
@@ -160,6 +178,23 @@ async def update_project(
         changes["description"] = {"old": project.description, "new": description}
         project.description = description
     if status is not None and status != project.status:
+        # Check plan limit when reactivating an archived project
+        if project.status == ProjectStatus.archived and status == ProjectStatus.active:
+            org = await db.get(Organization, org_id)
+            if org is None:
+                raise LookupError("organization not found")
+
+            project_count_query = await db.execute(
+                select(func.count(Project.id)).where(
+                    Project.org_id == org_id,
+                    Project.status != ProjectStatus.archived,
+                )
+            )
+            project_count = project_count_query.scalar_one()
+
+            if not can_add_project(org.plan_tier, project_count):
+                raise PlanLimitError(org.plan_tier, "projects", 3)
+
         changes["status"] = {"old": project.status.value, "new": status.value}
         project.status = status
 

@@ -19,6 +19,7 @@ from app.models.admin import (
     CreateOrganizationRequest,
     MembershipRoleUpdateRequest,
     OrganizationAdminOut,
+    PlanUpdateRequest,
     UserAdminOut,
 )
 from app.models.auth import (
@@ -154,3 +155,16 @@ async def update_membership_role(
         raise HTTPException(status_code=404, detail=str(e))
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.patch("/organizations/{org_id}/plan", response_model=OrganizationAdminOut)
+async def update_organization_plan(
+    org_id: uuid.UUID,
+    payload: PlanUpdateRequest,
+    ctx: AuthContext = Depends(require_super_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        return await sa_fn.update_org_plan(db, org_id, payload.plan_tier)
+    except LookupError as e:
+        raise HTTPException(status_code=404, detail=str(e))

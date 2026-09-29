@@ -12,7 +12,6 @@ from app.models import (
     OrgMembership,
     OrgRole,
     Organization,
-    PlanTier,
     Project,
     ProjectMember,
     User,
@@ -88,7 +87,6 @@ async def update_org(
     actor_id: uuid.UUID,
     name: str | None,
     logo_url: str | None,
-    plan_tier: PlanTier | None,
 ) -> Organization:
     org = await _get_org(db, org_id)
     changes: dict[str, dict] = {}
@@ -98,9 +96,6 @@ async def update_org(
     if logo_url is not None and logo_url != org.logo_url:
         changes["logo_url"] = {"old": org.logo_url, "new": logo_url or None}
         org.logo_url = logo_url or None
-    if plan_tier is not None and plan_tier != org.plan_tier:
-        changes["plan_tier"] = {"old": org.plan_tier.value, "new": plan_tier.value}
-        org.plan_tier = plan_tier
 
     if changes:
         await _log_activity(
